@@ -1,0 +1,26 @@
+{
+	"schemaVersion": 1,
+	"id": "mobpossession",
+	"version": "${version}",
+	"name": "Mob Possession",
+	"description": "Right-click a mob to jump into its body and control it. Sneak to get back out.",
+	"authors": [
+		"Kaius Cole"
+	],
+	"contact": {
+		"sources": "https://github.com/K-Batman/mob-possession-mod"
+	},
+	"license": "MIT",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.kaius.mobpossession.MobPossessionMod"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
