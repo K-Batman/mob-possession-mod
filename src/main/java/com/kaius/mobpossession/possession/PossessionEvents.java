@@ -76,6 +76,7 @@ public final class PossessionEvents {
 		PossessionManager.start(playerId, mob.getUUID(), anchor);
 
 		player.setInvisible(true);
+		player.setCamera(mob); // this is the actual fix for the screen not following the mob
 
 		player.sendOverlayMessage(
 				Component.literal("You are now controlling " + mob.getDisplayName().getString() + "! Sneak to get out.")
@@ -121,12 +122,14 @@ public final class PossessionEvents {
 		}
 		PossessionManager.setLastPosition(playerId, anchor);
 
-		// Hand that movement to the mob instead. Keep the mob's own vertical
-		// motion (gravity, falling) and only override horizontal movement.
-		Vec3 mobMove = new Vec3(attemptedMove.x, 0, attemptedMove.z);
-		if (mobMove.lengthSqr() > 0.00001) {
-			mob.move(MoverType.SELF, mobMove);
-		}
+		// Hand that movement to the mob. NoAi mobs don't get vanilla gravity
+		// applied automatically (that's what was making it float like a
+		// balloon), so we simulate it ourselves: fall while airborne, stop
+		// falling once move() tells us we've landed.
+		double verticalSpeed = mob.onGround() ? 0.0 : (mob.getDeltaMovement().y - mob.getGravity()) * 0.98;
+		Vec3 mobMove = new Vec3(attemptedMove.x, verticalSpeed, attemptedMove.z);
+		mob.move(MoverType.SELF, mobMove);
+		mob.setDeltaMovement(0, verticalSpeed, 0);
 
 		// Look where the player looks.
 		mob.setYRot(player.getYRot());
@@ -158,6 +161,7 @@ public final class PossessionEvents {
 					Component.literal("You let go of the mob.").withStyle(ChatFormatting.GRAY));
 		}
 		player.setInvisible(false);
+		player.setCamera(player); // give the player's own eyes back
 		PossessionManager.stop(playerId);
 	}
 
