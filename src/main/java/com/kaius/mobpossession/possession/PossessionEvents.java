@@ -58,6 +58,10 @@ public final class PossessionEvents {
 		if (!(playerEntity instanceof ServerPlayer player)) return InteractionResult.PASS;
 		if (!(target instanceof Mob mob)) return InteractionResult.PASS; // players, item frames, etc. are off limits
 
+		// Holding something? Let it do its normal thing (feed, bucket, name tag,
+		// lead, whatever) instead of possessing - possession is an empty-hand move.
+		if (!player.getMainHandItem().isEmpty()) return InteractionResult.PASS;
+
 		UUID playerId = player.getUUID();
 
 		// Already possessing something? Sneak out of that one first.
