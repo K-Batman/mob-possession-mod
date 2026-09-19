@@ -1,5 +1,6 @@
 package com.kaius.mobpossession.mixin;
 
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -68,9 +69,25 @@ public abstract class LivingEntityRiddenInputMixin {
 		LivingEntity self = (LivingEntity) (Object) this;
 		if (!mobpossession$isPossessed(self, controller)) return;
 
+		// Flying mobs (Wither, Ghast, Phantom - anything that ignores gravity) get
+		// full 3D control: look up to climb, look down to dive, space to boost up.
+		// We drive this ourselves because the default riding physics only ever
+		// move horizontally - there's no vanilla vertical rider input to lean on.
+		if (self.isNoGravity()) {
+			self.setXRot(controller.getXRot());
+			float pitchRad = self.getXRot() * ((float) Math.PI / 180F);
+			double climb = -Mth.sin(pitchRad) * 0.4;
+			if (controller.jumping) {
+				climb += 0.3;
+			}
+			Vec3 delta = self.getDeltaMovement();
+			self.setDeltaMovement(delta.x, climb, delta.z);
+		} else {
+			self.setXRot(controller.getXRot() * 0.5F);
+		}
+
 		// Face where the rider is looking.
 		self.setYRot(controller.getYRot());
-		self.setXRot(controller.getXRot() * 0.5F);
 		self.yHeadRot = self.getYRot();
 		self.yBodyRot = self.getYRot();
 		self.yRotO = self.getYRot();

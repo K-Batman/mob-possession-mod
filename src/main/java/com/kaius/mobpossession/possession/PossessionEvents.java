@@ -1,6 +1,7 @@
 package com.kaius.mobpossession.possession;
 
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.ChatFormatting;
@@ -11,7 +12,11 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.animal.AgeableWaterCreature;
+import net.minecraft.world.entity.animal.fish.WaterAnimal;
+import net.minecraft.world.entity.monster.RangedAttackMob;
 
 import java.util.UUID;
 
@@ -39,8 +44,14 @@ import java.util.UUID;
  *    riding and becomes visible again. Same thing happens automatically if
  *    the mob dies or despawns while possessed.
  *
- * Known limitation for v0.1: jumping isn't wired up yet (the mob won't jump
- * when you press space). That's the natural next thing to add.
+ * Extras:
+ * - Flying mobs (anything with gravity turned off, like a Wither or Ghast)
+ *   get real 3D flight control - see LivingEntityRiddenInputMixin.
+ * - Ranged mobs (anything implementing RangedAttackMob, like a Wither) fire
+ *   their normal attack at whatever you left-click while possessing them,
+ *   instead of punching it.
+ * - Water-only mobs (fish, squid, dolphins) drain your air bar while out of
+ *   water, same feel as a player almost-drowning, so you know to get back in.
  */
 public final class PossessionEvents {
 
@@ -49,6 +60,7 @@ public final class PossessionEvents {
 
 	public static void register() {
 		UseEntityCallback.EVENT.register(PossessionEvents::onUseEntity);
+		AttackEntityCallback.EVENT.register(PossessionEvents::onAttackEntity);
 		ServerTickEvents.END_SERVER_TICK.register(PossessionEvents::onServerTick);
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> onPlayerDisconnect(handler.player));
 	}
@@ -88,6 +100,22 @@ public final class PossessionEvents {
 		return InteractionResult.SUCCESS;
 	}
 
+	/** Left-click while possessing a ranged mob (a Wither, say) fires its attack instead of punching. */
+	private static InteractionResult onAttackEntity(net.minecraft.world.entity.player.Player playerEntity, net.minecraft.world.level.Level level, InteractionHand hand, Entity target, net.minecraft.world.phys.EntityHitResult hitResult) {
+		if (!(playerEntity instanceof ServerPlayer player)) return InteractionResult.PASS;
+		if (!(target instanceof LivingEntity livingTarget)) return InteractionResult.PASS;
+
+		UUID mobId = PossessionManager.getPossessedMob(player.getUUID());
+		Mob mob = findMobByUUID(player, mobId);
+		if (mob == null) return InteractionResult.PASS;
+
+		if (mob instanceof RangedAttackMob rangedAttackMob) {
+			rangedAttackMob.performRangedAttack(livingTarget, 1.0F);
+			return InteractionResult.SUCCESS;
+		}
+		return InteractionResult.PASS;
+	}
+
 	private static void onServerTick(MinecraftServer server) {
 		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
 			tickPossession(player);
@@ -109,9 +137,33 @@ public final class PossessionEvents {
 
 		if (player.isShiftKeyDown()) {
 			endPossession(player, mob);
+			return;
 		}
 		// Movement and facing are handled by the mixins now (LivingEntityRiddenInputMixin),
 		// same as vanilla riding - nothing left to do here each tick.
+
+		if (isAquatic(mob)) {
+			tickAquaticBreath(player, mob);
+		}
+	}
+
+	/** Fish, squid, dolphins - anything that can't actually breathe air. */
+	private static boolean isAquatic(Mob mob) {
+		return mob instanceof WaterAnimal || mob instanceof AgeableWaterCreature;
+	}
+
+	/**
+	 * Borrows the player's own air-supply bar (the vanilla drowning bubbles)
+	 * to show "your mob needs water" instead of adding a whole new HUD.
+	 * Vanilla's own out-of-water damage on the mob still applies on top of this -
+	 * this is purely the warning, not the danger.
+	 */
+	private static void tickAquaticBreath(ServerPlayer player, Mob mob) {
+		if (mob.isInWater()) {
+			player.setAirSupply(Math.min(player.getAirSupply() + 4, player.getMaxAirSupply()));
+		} else {
+			player.setAirSupply(Math.max(player.getAirSupply() - 1, 0));
+		}
 	}
 
 	private static void onPlayerDisconnect(ServerPlayer player) {
@@ -134,6 +186,7 @@ public final class PossessionEvents {
 		}
 		player.stopRiding();
 		player.setInvisible(false);
+		player.setAirSupply(player.getMaxAirSupply()); // don't leave them drowning from the mob's air bar
 		PossessionManager.stop(playerId);
 		player.sendOverlayMessage(Component.literal("You let go of the mob.").withStyle(ChatFormatting.GRAY));
 	}
