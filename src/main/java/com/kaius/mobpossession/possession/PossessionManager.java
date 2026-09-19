@@ -1,7 +1,5 @@
 package com.kaius.mobpossession.possession;
 
-import net.minecraft.world.phys.Vec3;
-
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -18,26 +16,15 @@ public class PossessionManager {
 	// player UUID -> mob (entity) UUID they're possessing
 	private static final Map<UUID, UUID> possessing = new HashMap<>();
 
-	// player UUID -> the spot we parked their real body at while possessing
-	private static final Map<UUID, Vec3> anchors = new HashMap<>();
-
-	// player UUID -> their position last tick, so we can measure how far they
-	// "tried" to walk this tick and hand that movement to the mob instead.
-	private static final Map<UUID, Vec3> lastPositions = new HashMap<>();
-
 	private PossessionManager() {
 	}
 
-	public static void start(UUID playerId, UUID mobId, Vec3 anchor) {
+	public static void start(UUID playerId, UUID mobId) {
 		possessing.put(playerId, mobId);
-		anchors.put(playerId, anchor);
-		lastPositions.put(playerId, anchor);
 	}
 
 	public static void stop(UUID playerId) {
 		possessing.remove(playerId);
-		anchors.remove(playerId);
-		lastPositions.remove(playerId);
 	}
 
 	public static boolean isPossessing(UUID playerId) {
@@ -48,20 +35,18 @@ public class PossessionManager {
 		return possessing.get(playerId);
 	}
 
-	public static Vec3 getAnchor(UUID playerId) {
-		return anchors.get(playerId);
-	}
-
-	public static Vec3 getLastPosition(UUID playerId) {
-		return lastPositions.get(playerId);
-	}
-
-	public static void setLastPosition(UUID playerId, Vec3 pos) {
-		lastPositions.put(playerId, pos);
-	}
-
 	/** True if some player, anyone, is already possessing this mob. */
 	public static boolean isMobPossessed(UUID mobId) {
 		return possessing.containsValue(mobId);
+	}
+
+	/** If this mob is possessed, who's doing it? Returns null if nobody is. */
+	public static UUID findPossessorOf(UUID mobId) {
+		for (Map.Entry<UUID, UUID> entry : possessing.entrySet()) {
+			if (entry.getValue().equals(mobId)) {
+				return entry.getKey();
+			}
+		}
+		return null;
 	}
 }

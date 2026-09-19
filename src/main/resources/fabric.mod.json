@@ -17,6 +17,10 @@
 			"com.kaius.mobpossession.MobPossessionMod"
 		]
 	},
+	"mixins": [
+		"mobpossession.mixins.json"
+	],
+	"accessWidener": "mobpossession.accesswidener",
 	"depends": {
 		"fabricloader": ">=0.19.5",
 		"minecraft": "~26.2",

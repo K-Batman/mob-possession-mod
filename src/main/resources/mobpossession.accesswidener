@@ -1,0 +1,6 @@
+accessWidener v2 official
+
+# We need to read a possessing player's raw movement input (strafe/forward)
+# from inside a mixin so we can hand it to the mob they're riding.
+accessible field net/minecraft/world/entity/LivingEntity xxa F
+accessible field net/minecraft/world/entity/LivingEntity zza F

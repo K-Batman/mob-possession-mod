@@ -1,5 +1,6 @@
 package com.kaius.mobpossession.possession;
 
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.UseEntityCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.ChatFormatting;
@@ -11,9 +12,6 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
-import net.minecraft.world.entity.MoverType;
-import net.minecraft.world.phys.Vec3;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 
 import java.util.UUID;
 
@@ -22,20 +20,24 @@ import java.util.UUID;
  *
  * How it works, step by step:
  *
- * 1. Right-click a mob (empty hand) -> we "enter" it: the mob's AI turns off
- *    (so it stops wandering on its own), the player goes invisible and gets
- *    parked at a fixed anchor spot, and we remember the pairing.
+ * 1. Right-click a mob (empty hand) -> we "enter" it: the mob's own wandering
+ *    AI turns off, and the player actually starts *riding* the mob
+ *    (Entity#startRiding, forced since mobs don't normally accept riders).
  *
- * 2. Every server tick, we look at how far the (invisible, parked) player
- *    *tried* to walk this tick using normal WASD - then we snap them back to
- *    the anchor and hand that same movement over to the mob instead, using
- *    Entity#move() so it still respects walls/collision. We also copy the
- *    player's look direction onto the mob's rotation, so where you look is
- *    where the mob faces.
+ * 2. Two mixins (see the mixin package) make vanilla think the possessing
+ *    player is "driving" the mob the same way a rider drives a horse:
+ *    - MobControllingPassengerMixin tells Mob#getControllingPassenger() to
+ *      say "yes, this player is in control" for a possessed mob.
+ *    - LivingEntityRiddenInputMixin translates the player's WASD into the
+ *      mob's movement input.
+ *    Because this plugs into vanilla's *own* riding code, gravity,
+ *    collision, and speed all just work correctly - we don't have to fake
+ *    any physics ourselves. Riding also means the camera naturally follows
+ *    the mob, since that's just how riding works.
  *
- * 3. Sneak (shift) -> we "exit": mob AI turns back on, player becomes
- *    visible again and is teleported to stand next to the mob. If the mob
- *    dies while possessed, the same thing happens automatically.
+ * 3. Sneak (shift) -> we "exit": mob AI turns back on, the player stops
+ *    riding and becomes visible again. Same thing happens automatically if
+ *    the mob dies or despawns while possessed.
  *
  * Known limitation for v0.1: jumping isn't wired up yet (the mob won't jump
  * when you press space). That's the natural next thing to add.
@@ -71,12 +73,9 @@ public final class PossessionEvents {
 		if (!mob.isAlive()) return InteractionResult.PASS;
 
 		mob.setNoAi(true);
-
-		Vec3 anchor = player.position();
-		PossessionManager.start(playerId, mob.getUUID(), anchor);
-
+		PossessionManager.start(playerId, mob.getUUID());
+		player.startRiding(mob, true, true);
 		player.setInvisible(true);
-		player.setCamera(mob); // this is the actual fix for the screen not following the mob
 
 		player.sendOverlayMessage(
 				Component.literal("You are now controlling " + mob.getDisplayName().getString() + "! Sneak to get out.")
@@ -109,34 +108,11 @@ public final class PossessionEvents {
 			return;
 		}
 
-		Vec3 anchor = PossessionManager.getAnchor(playerId);
-		Vec3 lastPos = PossessionManager.getLastPosition(playerId);
-		Vec3 currentPos = player.position();
-
-		// How far did the player *try* to move this tick?
-		Vec3 attemptedMove = currentPos.subtract(lastPos);
-
-		// Snap the real body back to the anchor so it doesn't wander off while invisible.
-		if (currentPos.distanceToSqr(anchor) > 0.0001) {
-			player.teleportTo(anchor.x, anchor.y, anchor.z);
-		}
-		PossessionManager.setLastPosition(playerId, anchor);
-
-		// Hand that movement to the mob. NoAi mobs don't get vanilla gravity
-		// applied automatically (that's what was making it float like a
-		// balloon), so we simulate it ourselves: fall while airborne, stop
-		// falling once move() tells us we've landed.
-		double verticalSpeed = mob.onGround() ? 0.0 : (mob.getDeltaMovement().y - mob.getGravity()) * 0.98;
-		Vec3 mobMove = new Vec3(attemptedMove.x, verticalSpeed, attemptedMove.z);
-		mob.move(MoverType.SELF, mobMove);
-		mob.setDeltaMovement(0, verticalSpeed, 0);
-
-		// Look where the player looks.
+		// Look where the player looks - the mixins handle actual movement.
 		mob.setYRot(player.getYRot());
 		mob.setXRot(player.getXRot());
 		mob.yHeadRot = player.getYRot();
 		mob.yBodyRot = player.getYRot();
-		mob.yRotO = player.getYRot();
 	}
 
 	private static void onPlayerDisconnect(ServerPlayer player) {
@@ -156,13 +132,11 @@ public final class PossessionEvents {
 		UUID playerId = player.getUUID();
 		if (mob != null) {
 			mob.setNoAi(false);
-			player.teleportTo(mob.getX(), mob.getY(), mob.getZ());
-			player.sendOverlayMessage(
-					Component.literal("You let go of the mob.").withStyle(ChatFormatting.GRAY));
 		}
+		player.stopRiding();
 		player.setInvisible(false);
-		player.setCamera(player); // give the player's own eyes back
 		PossessionManager.stop(playerId);
+		player.sendOverlayMessage(Component.literal("You let go of the mob.").withStyle(ChatFormatting.GRAY));
 	}
 
 	private static Mob findMobByUUID(ServerPlayer player, UUID mobId) {
