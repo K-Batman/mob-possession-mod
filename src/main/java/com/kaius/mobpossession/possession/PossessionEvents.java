@@ -105,14 +105,9 @@ public final class PossessionEvents {
 
 		if (player.isShiftKeyDown()) {
 			endPossession(player, mob);
-			return;
 		}
-
-		// Look where the player looks - the mixins handle actual movement.
-		mob.setYRot(player.getYRot());
-		mob.setXRot(player.getXRot());
-		mob.yHeadRot = player.getYRot();
-		mob.yBodyRot = player.getYRot();
+		// Movement and facing are handled by the mixins now (LivingEntityRiddenInputMixin),
+		// same as vanilla riding - nothing left to do here each tick.
 	}
 
 	private static void onPlayerDisconnect(ServerPlayer player) {
